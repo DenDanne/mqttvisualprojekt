@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import plotly.graph_objs as go
 import dash
 from dash import dcc, html
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 
 def parse_data():
     times = []
@@ -57,7 +57,16 @@ app.layout = html.Div(children=[
         id='graph-update',
         interval=5*1000
     ),
-    dcc.Store(id='store-data', storage_type='session'),  # Add this line
+    html.Label('Total minutes between every Uplink:'),
+    dcc.Slider(
+        id='slider',
+        min=2,
+        max=60,
+        step=1,
+        marks={i: str(i) for i in range(2, 61)},
+        value=2,
+    ),
+    html.Button('Send Downlink', id='btn-downlink'),
 ])
 
 @app.callback(Output('live-graph', 'figure'),
@@ -72,11 +81,8 @@ def update_graph_scatter(n):
         mode='lines+markers'
     )
 
-    # Add a small random noise to the data (if needed, for testing)
-    # speeds = [speed + np.random.normal(scale=0.1) for speed in speeds]
-
     layout = go.Layout(
-        title=f'Speed over Time (Updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")})',  # Add timestamp to title
+        title=f'Speed over Time (Updated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")})',
         xaxis=dict(title='Time'),
         yaxis=dict(title='Speed [km/h]'),
         showlegend=True
@@ -88,7 +94,18 @@ def update_graph_scatter(n):
               [Input('graph-update', 'n_intervals')])
 def update_data_count(n):
     count = count_datapoints()
-    return f"Total number of passages: {count}"
+    return f"Total numbers of passages: {count}"
+
+@app.callback(
+    Output('btn-downlink', 'n_clicks'),
+    Input('btn-downlink', 'n_clicks'),
+    State('slider', 'value')
+)
+def send_downlink(n_clicks, slider_value):
+    if n_clicks is not None and n_clicks > 0:
+        with open("downlinks.txt", "a") as file:
+            file.write(str(slider_value) + "\n")
+    return n_clicks
 
 if __name__ == '__main__':
     app.run_server(debug=True)
