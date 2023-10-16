@@ -9,6 +9,7 @@ def parse_data():
     times = []
     speeds = []
     prev_time_point = None
+    current_day = datetime.now().date()  # Get the current date
     
     try:
         with open("resultat.txt", "rb") as file:
@@ -19,6 +20,14 @@ def parse_data():
             try:
                 time_str, speed_str = line.strip().split()
                 time_point = datetime.strptime(time_str, "%H:%M")
+
+                # Check if time_point is less than prev_time_point, 
+                # implying the day has changed.
+                if prev_time_point and time_point < prev_time_point:
+                    current_day += timedelta(days=1)
+                
+                # Combine the current day and time_point to get the full datetime.
+                time_point = datetime.combine(current_day, time_point.time())
 
                 if prev_time_point is not None:
                     speed_seq = list(map(int, speed_str.split('X')[:-1]))
@@ -37,6 +46,7 @@ def parse_data():
     print(f"Parsed speeds: {speeds}")
     
     return times, speeds
+
 
 def count_datapoints():
     try:

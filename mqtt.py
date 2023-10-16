@@ -12,12 +12,17 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from datetime import datetime, timedelta
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_dir)
+
 USER = "lora-test-ful@ttn"
 PASSWORD = "NNSXS.43M3AY73ECK6MFPXQ3X5THOV27SAY224UJXBUOQ.4JO563N3PQHPHLHOYYBYCVHMNFCYXNPNPAOTSLUNVMPNKND763RA"
 PUBLIC_TLS_ADDRESS = "eu1.cloud.thethings.network"
 PUBLIC_TLS_ADDRESS_PORT = 8883
 DEVICE_ID = "eui-2cf7f12032304b2d"
 ALL_DEVICES = True
+DOWNLINKS_FILE = "downlinks.txt"
+last_sent_value = None
 
 # Meaning Quality of Service (QoS)
 # QoS = 0 - at most once
@@ -58,7 +63,6 @@ def save_to_file(some_json):
     end_device_ids = some_json["end_device_ids"]
     device_id = end_device_ids["device_id"]
     application_id = end_device_ids["application_ids"]["application_id"]
-    received_at_full = some_json["received_at"]
 
     if 'uplink_message' in some_json:
         uplink_message = some_json["uplink_message"]
@@ -66,8 +70,8 @@ def save_to_file(some_json):
 
         # check if f_port is found
         if f_port != '-':
-            # Extract desired parts of received_at
-            received_at = received_at_full.split("T")[1].split(":")[0] + ":" + received_at_full.split("T")[1].split(":")[1]
+            # Get current system time in HH:MM format
+            current_time = datetime.now().strftime("%H:%M")
             
             # Decode frm_payload from base64 to ASCII
             frm_payload_encoded = uplink_message["frm_payload"]
@@ -78,7 +82,7 @@ def save_to_file(some_json):
             print(path_n_file)
             
             last_time = None
-            data_to_write = f"{received_at} {frm_payload}\n"
+            data_to_write = f"{current_time} {frm_payload}\n"
             
             # Check if file exists and is not empty
             if os.path.exists(path_n_file) and os.path.getsize(path_n_file) > 0:
@@ -89,7 +93,7 @@ def save_to_file(some_json):
                     last_time = last_line.split()[0]  # Assuming time is always available
             
             # Check if last time is the same as current time
-            if last_time == received_at:
+            if last_time == current_time:
                 # Append data to last line
                 data_to_write = lines[-1].strip() + frm_payload + "\n"
                 lines[-1] = data_to_write  # Replace last line
@@ -100,7 +104,6 @@ def save_to_file(some_json):
                 # Add new line with new time
                 with open(path_n_file, 'a', newline='') as txtFile:
                     txtFile.write(data_to_write)
-
 
 # The callback for when the client receives a CONNACK response from the server.
 def on_connect(client, userdata, flags, rc):
@@ -138,6 +141,36 @@ def on_log(client, userdata, level, buf):
     print("\nLog: " + buf)
     logging_level = client.LOGGING_LEVEL[level]
     logging.log(logging_level, buf)
+
+# ---- DOWNLINKS ----
+def get_last_line_from_file(filename):
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+        return lines[-1].strip() if lines else None
+
+def monitor_downlinks_file():
+    global last_sent_value
+
+    # Get the last line from the file
+    current_value = get_last_line_from_file(DOWNLINKS_FILE)
+
+    if current_value and current_value != last_sent_value:
+        print(f"New value detected: {current_value}")
+        send_downlink(current_value)
+        last_sent_value = current_value
+
+def send_downlink(payload_str):
+    encoded_payload = base64.b64encode(payload_str.encode('ascii')).decode('ascii')
+    downlink_msg = {
+        "downlinks": [{
+            "f_port": 1,
+            "frm_payload": encoded_payload
+        }]
+    }
+
+    topic = f"v3/{USER}/devices/{DEVICE_ID}/down/push"
+    mqttc.publish(topic, json.dumps(downlink_msg), qos=QOS)
+    print(f"Sent downlink with payload: {payload_str}")
 
 
 # Generate client ID with pub prefix randomly
@@ -185,6 +218,8 @@ try:
     run = True
     while run:
         mqttc.loop(10)  # seconds timeout / blocking time
-        print(".", end="", flush=True)  # feedback to the user that something is actually happening
+        print(".", end="", flush=True)
+        monitor_downlinks_file()
+
 except KeyboardInterrupt:
     stop(mqttc)
